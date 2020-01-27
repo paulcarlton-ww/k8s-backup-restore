@@ -22,16 +22,16 @@ from botocore.config import Config
 import json
 
 from kubernetes.client.rest import ApiException
-from kubernetes import client, config
+from kubernetes import client, config, watch
 import utilslib.library as lib
-
+import asyncio
 import logging
 
 logging.basicConfig(format='%(asctime)-15s %(name)s:%(lineno)s - ' + 
                     '%(funcName)s() %(levelname)s - %(message)s',
                     level=logging.INFO)
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
 
 class Base(object):
     log = None
@@ -155,6 +155,7 @@ class Retrieve(S3):
 class K8s(object):
     v1 = None
     v1App = None
+    v1ext = None
     
     kinds = {'ConfigMap': ('v1', 'config_map'),
              'EndPoints': ('v1', 'endpoints'),
@@ -164,7 +165,7 @@ class K8s(object):
              'ResourceQuota': ('v1', 'resource_quota'),
              'Secret': ('v1', 'secret'),
              'Service': ('v1', 'service'),
-             'ServiceAccount': ('v1', 'service_account'),
+             #'ServiceAccount': ('v1', 'service_account'),
              'PodTemplate': ('v1', 'pod_template'),
              'Pod': ('v1', 'pod'),
              'ReplicationController': ('v1', 'replication_controller'),
@@ -191,6 +192,7 @@ class K8s(object):
         config.load_kube_config()
         self.v1 = client.CoreV1Api()
         self.v1App = client.AppsV1Api()
+        self.v1ext = client.ExtensionsV1beta1Api()
 
     def get_api_method(self, kind):
         try:
@@ -238,9 +240,9 @@ class K8s(object):
      
     @lib.timing_wrapper
     @lib.retry_wrapper
-    def create_kind(self, namespace, kind, name, data):
+    def create_kind(self, namespace, kind, data):
         api, method = self.get_api_method(kind)
-        return lib.dynamic_method_call(name, namespace, data,
+        return lib.dynamic_method_call(namespace, data,
                                    method_text=method,
                                    method_prefix="create_namespaced_",
                                    method_object=api)
@@ -314,16 +316,21 @@ class Restore(K8s, Retrieve):
         Restore object
         """
         super(Restore, self).__init__(*args, **kwargs)
-        
+    
+    
+    @lib.timing_wrapper
+    def remove_if_exists(self, namespace, kind, name):
+        try:
+            self.read_kind(namespace, kind, name)
+        except Exception as e:
+            return
+        self.delete_kind(namespace, kind, name)
+                
     @lib.timing_wrapper
     def restore_namespaces(self, namespace=""):
         prefix = "namespaces/{}".format(namespace)
         for key, data in self.get_bucket_items(prefix):
             namespace, kind, name = S3.parse_key(key)
             #self.replace_kind(namespace, kind, name, data)
-            self.delete_kind(namespace, kind, name, data)
-            self.create_kind(namespace, kind, name, data)
-
-
-        
-    
+            self.remove_if_exists(namespace, kind, name)
+            self.create_kind(namespace, kind, data)
