@@ -22,9 +22,3 @@ namespaces = [n for n in backup.list_namespaces() if n.metadata.name not in excl
 for n in namespaces:
     print("\nbackingup namespace: {}".format(n.metadata.name))
     items = backup.save_namespace(n.metadata.name)
-
-os.environ["KUBECONFIG"] = "/home/pcarlton/c1.yaml"
-
-restore = dr.Restore(loglevel="DEBUG", bucket_name='bank-app-backup')
-#log.setLevel(logging.DEBUG)
-restore.restore_namespaces()

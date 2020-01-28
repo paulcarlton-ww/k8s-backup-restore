@@ -20,11 +20,8 @@ import boto3
 import boto3.s3
 from botocore.config import Config
 import json
-
-from kubernetes.client.rest import ApiException
-from kubernetes import client, config, watch
+from kubernetes import client, config
 import utilslib.library as lib
-import asyncio
 import logging
 
 logging.basicConfig(format='%(asctime)-15s %(name)s:%(lineno)s - ' + 
