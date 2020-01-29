@@ -16,6 +16,7 @@ import functools
 import logging
 from datetime import datetime
 import json
+import yaml
 
 logging.basicConfig(format='%(asctime)-15s %(name)s:%(lineno)s - %(funcName)s() %(levelname)s - %(message)s', level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def dynamic_method_call(*args, **kwargs):
         [kwargs.pop(x, None) for x in ['method_object', 'method_prefix', 'method_text', 'method_suffix']]
         return target_func(*args, **kwargs)
 
-def k8s_chunk_wrapper(func, limit=2, next_item=''):
+def k8s_chunk_wrapper(func, limit=100, next_item=''):
     """
     Function wrapper to process kubernetes client calls that get lists of items in chunks
 

@@ -12,6 +12,7 @@ __date__ = "18 October 2016"
 
 from datetime import date, timedelta
 import os
+import io
 import sys
 import time
 import functools
@@ -20,6 +21,7 @@ import boto3
 import boto3.s3
 from botocore.config import Config
 import json
+import yaml
 from kubernetes import client, config
 import utilslib.library as lib
 import logging
@@ -53,8 +55,9 @@ class Base(object):
         log.setLevel(loglevel)
             
 class S3(Base):
-    s3 = None
+    client = None
     bucket = None
+    bucket_name = None
         
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
@@ -70,10 +73,11 @@ class S3(Base):
         """
         super(S3, self).__init__(*args, **kwargs)
         config = Config(connect_timeout=5, retries={'max_attempts': 0})
-        self.s3 = boto3.resource('s3', config=config)
-        bucket_name = kwargs.get("bucket_name", None)
-        if bucket_name is not None:
-            self.bucket = self.s3.Bucket(bucket_name)
+        s3 = boto3.resource('s3', config=config)
+        self.client = boto3.client('s3')
+        self.bucket_name = kwargs.get("bucket_name", None)
+        if self.bucket_name is not None:
+            self.bucket = s3.Bucket(self.bucket_name)
     
     @staticmethod
     def parse_key(key):
@@ -89,9 +93,10 @@ class S3(Base):
         fields = key.split('/')
         if len(fields) != 4:
             raise Exception(
-                "key should comprise /namespaces/namespace/kind/name")
-        return fields[1], fields[2], fields[3]
- 
+                "key should comprise /cluster/namespace/kind/name")
+        return fields[0], fields[1], fields[2], fields[3]
+
+
 class Store(S3):
 
     @lib.retry_wrapper
@@ -117,8 +122,8 @@ class Store(S3):
         :param key: The key.
         :param data: The dictionary to store
         """ 
-        self.bucket.put_object(Key=key,
-                               Body=json.dumps(data, cls=lib.DateTimeEncoder))
+        self.bucket.put_object(Key=key,Body=data)
+
 
 class Retrieve(S3):
     
@@ -138,6 +143,21 @@ class Retrieve(S3):
     
     @lib.timing_wrapper
     @lib.retry_wrapper       
+    def get_s3_namespaces(self, prefix):
+        """
+        retrieve namespace names for provided cluster name prefix.
+
+        :param prefix: The key prefix .
+        """
+        client = boto3.client('s3')
+        result = self.client.list_objects(Bucket=self.bucket_name,
+                                      Prefix="{}/".format(prefix), Delimiter='/')
+        for o in result.get('CommonPrefixes'):
+            cluster_namespace = o.get('Prefix')
+            yield(cluster_namespace.split('/')[1])
+
+    @lib.timing_wrapper
+    @lib.retry_wrapper       
     def get_bucket_items(self, prefix):
         """
         retrieve items in an S3 bucket with the provided prefix.
@@ -146,7 +166,8 @@ class Retrieve(S3):
         """
 
         for obj in list(self.bucket.objects.filter(Prefix=prefix)):
-            yield(obj.key, json.loads(obj.get()['Body'].read()))
+            yield(obj.key, obj.get()['Body'].read())
+                  # json.loads(obj.get()['Body'].read()))
       
 
 class K8s(object):
@@ -156,13 +177,13 @@ class K8s(object):
     
     kinds = {'ConfigMap': ('v1', 'config_map'),
              'EndPoints': ('v1', 'endpoints'),
-             'Event': ('v1', 'event'),
+             # Not currently supported 'Event': ('v1', 'event'), 
              'LimitRange': ('v1', 'limit_range'),
-             'PersistentVolumeClaim': ('v1', 'persistent_volume_claim'),
+             # Not currently supported 'PersistentVolumeClaim': ('v1', 'persistent_volume_claim'),
              'ResourceQuota': ('v1', 'resource_quota'),
              'Secret': ('v1', 'secret'),
              'Service': ('v1', 'service'),
-             #'ServiceAccount': ('v1', 'service_account'),
+             # Not currently supported 'ServiceAccount': ('v1', 'service_account'),
              'PodTemplate': ('v1', 'pod_template'),
              'Pod': ('v1', 'pod'),
              'ReplicationController': ('v1', 'replication_controller'),
@@ -191,6 +212,24 @@ class K8s(object):
         self.v1App = client.AppsV1Api()
         self.v1ext = client.ExtensionsV1beta1Api()
 
+    @staticmethod
+    def process_attr_maps(d):
+        try:
+            map = d.get("attribute_map")
+        except Exception:
+            return d
+        
+        for k, v in d["attribute_map"].items():
+            value = d.pop(k, None)
+            if value:
+                d[v] = value
+        
+        for k, v in d.items():
+            if isinstance(v, dict):
+                d[k] = K8s.process_attr_map(v)
+
+        return d
+        
     def get_api_method(self, kind):
         try:
             api_name = K8s.kinds.get(kind)[0]
@@ -270,8 +309,8 @@ class Backup(K8s, Store):
         super(Backup, self).__init__(*args, **kwargs)
     
     @staticmethod
-    def prepare_item(kind, data):
-        d = data.to_dict()
+    def create_key_yaml(kind, data):
+        d = data.to_dict() #{k: v for k, v in data.to_dict().items() if v is not None}
         [d['metadata'].pop(x, None) for x in ['cluster_name',
                                               'creation_timestamp', 
                                               'deletion_grace_period_seconds',
@@ -283,11 +322,14 @@ class Backup(K8s, Store):
                                               'initializers',
                                               'managed_fields', 
                                               'owner_references',
-                                              'resource_version'
+                                              'resource_version',
                                               'uid', 'self_link']]
-        key = "namespaces/{}/{}/{}".format(d['metadata']['namespace'], 
+        dy = K8s.process_attr_maps(d)
+        y = yaml.dump(dy)
+        print("\n# key: {}\n{}".format(key, y))
+        key = "cluster2/{}/{}/{}".format(d['metadata']['namespace'], 
                                            kind, d['metadata']['name'])
-        return key, d
+        return key, y
     
     @lib.timing_wrapper
     def save_namespace(self, namespace):
@@ -299,6 +341,28 @@ class Backup(K8s, Store):
 
 
 class Restore(K8s, Retrieve):
+    
+        
+    kind_order = ['LimitRange',
+                  'ResourceQuota',
+                  'ConfigMap',
+                  'Secret',
+                  'EndPoints',
+                  #'Event',
+                  #'PersistentVolumeClaim',
+                  'Service',
+                 #'ServiceAccount',
+                  'PodTemplate',
+                  'Pod',
+                  'ReplicationController',
+                  'ControllerRevision',
+                  'DaemonSet',
+                  'ReplicaSet',
+                  'StatefulSet',
+                  'Deployment']
+    
+    exclude_list = [("default", "Service", "kubernetes"),
+                    ("default", "Endpoints", "kubernetes")]
 
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
@@ -314,6 +378,13 @@ class Restore(K8s, Retrieve):
         """
         super(Restore, self).__init__(*args, **kwargs)
     
+    @staticmethod
+    def exclude_check(namespace, kind, name):
+        if (namespace, kind, name) in Restore.exclude_list:
+            return True
+        if kind == "Secret" and "default" in name:
+            return True
+        return False
     
     @lib.timing_wrapper
     def remove_if_exists(self, namespace, kind, name):
@@ -324,10 +395,19 @@ class Restore(K8s, Retrieve):
         self.delete_kind(namespace, kind, name)
                 
     @lib.timing_wrapper
-    def restore_namespaces(self, namespace=""):
-        prefix = "namespaces/{}".format(namespace)
-        for key, data in self.get_bucket_items(prefix):
-            namespace, kind, name = S3.parse_key(key)
-            #self.replace_kind(namespace, kind, name, data)
-            self.remove_if_exists(namespace, kind, name)
-            self.create_kind(namespace, kind, data)
+    def restore_namespaces(self):
+        namespace = []
+        for namespace in self.get_s3_namespaces("cluster2"):
+            print("# namespace: {}".format(namespace))
+            for kind in Restore.kind_order:
+                prefix = "cluster2/{}/{}".format(namespace, kind)
+                for key, data in self.get_bucket_items(prefix):
+                    _, _, _, name = S3.parse_key(key)
+                    #self.replace_kind(namespace, kind, name, data)
+                    if Restore.exclude_check(namespace, kind, name):
+                        print("# skipping: {} {} in namespace {}".format(kind, name, namespace))
+                        continue
+                    print("\n# key: {}\n{}".format(key, data.decode("utf-8")))
+                    self.remove_if_exists(namespace, kind, name)
+                    d = yaml.load(data)
+                    self.create_kind(namespace, kind, d)
