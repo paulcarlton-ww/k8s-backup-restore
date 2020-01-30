@@ -211,18 +211,37 @@ class K8s(object):
         self.v1 = client.CoreV1Api()
         self.v1App = client.AppsV1Api()
         self.v1ext = client.ExtensionsV1beta1Api()
+        self.v1beta1 = client.ApiextensionsV1beta1Api()
 
     @staticmethod
     def strip_nulls(data):
         return {k: v for k, v in data.items() if v is not None}
     
     @staticmethod
-    def process_data(d):
-        if isinstance(d, object):
-            
+    def object_to_dict(data):
+        if isinstance(data, object):
+            d = {}
+            for k,v in data.attribute_map:
+                d[v] = getattr(data, k)
+        else:
+            if not isinstance(data, dict):
+                raise Exception("expecting object or dict: {}".format(type(data)))
+            d = data
+            try:
+                map = d.get("attribute_map")
+                for k, v in map.items():
+                    value = d.pop(k, None)
+                    if value:
+                        d[v] = value
+            except Exception:
+                pass
         d = K8s.strip_nulls(d)
+        
+    @staticmethod
+    def process_data(data): 
+        d = K8s.object_to_dict(data)
         try:
-            meta = d.get("metadata")
+            meta = K8s.object_to_dict(d.get("metadata"))
             [meta.pop(x, None) for x in ['cluster_name',
                                         'creation_timestamp', 
                                         'deletion_grace_period_seconds',
@@ -235,20 +254,12 @@ class K8s(object):
                                         'owner_references',
                                         'resource_version',
                                         'uid', 'self_link']]
+            d["metadata"] = meta
         except Exception as e:
             log.debug(e)
             pass
         
         [d.pop(x, None) for x in ['resource_version', 'uid', 'self_link']]
-        
-        try:
-            map = d.get("attribute_map")
-            for k, v in map.items():
-                value = d.pop(k, None)
-            if value:
-                d[v] = value
-        except Exception:
-            pass
         
         for k, v in d.items():
             if isinstance(v, dict):
@@ -269,17 +280,34 @@ class K8s(object):
             raise e
         return api, method
             
-            
+
     @lib.timing_wrapper
     @lib.k8s_chunk_wrapper
     @lib.retry_wrapper
-    def list_namespaces(self, limit=2, next=''):
+    def list_custom_resource_definition(self,  limit=100, next=''):
+        return self.v1beta1.list_custom_resource_definition()
+    
+    @lib.timing_wrapper
+    @lib.retry_wrapper
+    def read_resource_definition(self, name):
+        return self.v1beta1.list_custom_resource_definition(name)
+     
+    @lib.timing_wrapper
+    @lib.retry_wrapper
+    def get_custom_resource_definitions(self):
+        for resource in self.list_custom_resource_definition():
+            yield self.v1beta1.read_custom_resource_definition(resource.metadata.name)
+      
+    @lib.timing_wrapper
+    @lib.k8s_chunk_wrapper
+    @lib.retry_wrapper
+    def list_namespaces(self, limit=100, next=''):
         return self.v1.list_namespace(limit=limit, _continue=next)
  
     @lib.timing_wrapper
     @lib.k8s_chunk_wrapper
     @lib.retry_wrapper
-    def list_kind(self, namespace, kind, limit=2, next=''):
+    def list_kind(self, namespace, kind, limit=100, next=''):
         api, method = self.get_api_method(kind)
         return lib.dynamic_method_call(namespace, limit=limit, _continue=next,
                                    method_text=method,
@@ -349,6 +377,8 @@ class Backup(K8s, Store):
     
     @lib.timing_wrapper
     def save_namespace(self, namespace):
+        for resource in self.get_custom_resource_definitions():
+            print(resource)
         for kind in K8s.kinds.keys():
             for item in self.list_kind(namespace, kind):
                 read_data = self.read_kind(namespace, kind, item.metadata.name)
