@@ -213,20 +213,50 @@ class K8s(object):
         self.v1ext = client.ExtensionsV1beta1Api()
 
     @staticmethod
-    def process_attr_maps(d):
+    def strip_nulls(data):
+        return {k: v for k, v in data.items() if v is not None}
+    
+    @staticmethod
+    def process_data(d):
+        if isinstance(d, object):
+            
+        d = K8s.strip_nulls(d)
+        try:
+            meta = d.get("metadata")
+            [meta.pop(x, None) for x in ['cluster_name',
+                                        'creation_timestamp', 
+                                        'deletion_grace_period_seconds',
+                                        'deletion_timestamp',
+                                        'finalizers',
+                                        'string_data',
+                                        'generation',
+                                        'initializers',
+                                        'managed_fields', 
+                                        'owner_references',
+                                        'resource_version',
+                                        'uid', 'self_link']]
+        except Exception as e:
+            log.debug(e)
+            pass
+        
+        [d.pop(x, None) for x in ['resource_version', 'uid', 'self_link']]
+        
         try:
             map = d.get("attribute_map")
-        except Exception:
-            return d
-        
-        for k, v in d["attribute_map"].items():
-            value = d.pop(k, None)
+            for k, v in map.items():
+                value = d.pop(k, None)
             if value:
                 d[v] = value
+        except Exception:
+            pass
         
         for k, v in d.items():
             if isinstance(v, dict):
-                d[k] = K8s.process_attr_map(v)
+                d[k] = K8s.process_data(v)
+            if isinstance(v, list):
+                for i in v:
+                    if isinstance(i, dict):
+                        d[k] = K8s.process_data(v)
 
         return d
         
@@ -310,25 +340,11 @@ class Backup(K8s, Store):
     
     @staticmethod
     def create_key_yaml(kind, data):
-        d = data.to_dict() #{k: v for k, v in data.to_dict().items() if v is not None}
-        [d['metadata'].pop(x, None) for x in ['cluster_name',
-                                              'creation_timestamp', 
-                                              'deletion_grace_period_seconds',
-                                              'deletion_timestamp',
-                                              'finalizers',
-                                              'string_data',
-                                              'generate_name',
-                                              'generation',
-                                              'initializers',
-                                              'managed_fields', 
-                                              'owner_references',
-                                              'resource_version',
-                                              'uid', 'self_link']]
-        dy = K8s.process_attr_maps(d)
-        y = yaml.dump(dy)
-        print("\n# key: {}\n{}".format(key, y))
+        d = K8s.process_data(data)
+        y = yaml.dump(d)
         key = "cluster2/{}/{}/{}".format(d['metadata']['namespace'], 
                                            kind, d['metadata']['name'])
+        print("\n# key: {}\n{}".format(key, y))
         return key, y
     
     @lib.timing_wrapper
@@ -336,7 +352,7 @@ class Backup(K8s, Store):
         for kind in K8s.kinds.keys():
             for item in self.list_kind(namespace, kind):
                 read_data = self.read_kind(namespace, kind, item.metadata.name)
-                key, data = Backup.prepare_item(kind, read_data)
+                key, data = Backup.create_key_yaml(kind, read_data)
                 self.store_in_bucket(key, data)
 
 
