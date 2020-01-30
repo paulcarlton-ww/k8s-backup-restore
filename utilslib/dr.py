@@ -352,6 +352,8 @@ class K8s(object):
   
 class Backup(K8s, Store):
     
+    custom_resources = []
+    
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
         """
@@ -365,6 +367,7 @@ class Backup(K8s, Store):
         Backup object
         """
         super(Backup, self).__init__(*args, **kwargs)
+        self.custom_resourse = self.get_custom_resources()
     
     @staticmethod
     def create_key_yaml(kind, data):
@@ -376,9 +379,13 @@ class Backup(K8s, Store):
         return key, y
     
     @lib.timing_wrapper
-    def save_namespace(self, namespace):
+    def get_custom_resources(self):
+        resources = []
         for resource in self.get_custom_resource_definitions():
-            print(resource)
+            resources.append(resource)
+
+    @lib.timing_wrapper
+    def save_namespace(self, namespace):
         for kind in K8s.kinds.keys():
             for item in self.list_kind(namespace, kind):
                 read_data = self.read_kind(namespace, kind, item.metadata.name)
