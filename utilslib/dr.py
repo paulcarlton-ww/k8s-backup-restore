@@ -219,7 +219,7 @@ class K8s(object):
     
     @staticmethod
     def object_to_dict(data):
-        if isinstance(data, object) and hasattr(data, attribute_map):
+        if isinstance(data, object) and hasattr(data, "attribute_map"):
             d = {}
             for k,v in data.attribute_map.items():
                 d[v] = getattr(data, k)
@@ -236,24 +236,29 @@ class K8s(object):
             except Exception:
                 pass
         return K8s.strip_nulls(d)
-        
+    
+    @staticmethod
+    def remove_meta_fields(d):
+        if not "metadata" in d:
+            return
+         meta = K8s.object_to_dict(d.get("metadata"))
+         d["metadata"] = [meta.pop(x, None) for x in ['cluster_name',
+                                            'creation_timestamp', 
+                                            'deletion_grace_period_seconds',
+                                            'deletion_timestamp',
+                                            'finalizers',
+                                            'string_data',
+                                            'generation',
+                                            'initializers',
+                                            'managed_fields', 
+                                            'owner_references',
+                                            'resource_version',
+                                            'uid', 'self_link']]
+
     @staticmethod
     def process_data(data): 
         d = K8s.object_to_dict(data)
         try:
-            meta = K8s.object_to_dict(d.get("metadata"))
-            [meta.pop(x, None) for x in ['cluster_name',
-                                        'creation_timestamp', 
-                                        'deletion_grace_period_seconds',
-                                        'deletion_timestamp',
-                                        'finalizers',
-                                        'string_data',
-                                        'generation',
-                                        'initializers',
-                                        'managed_fields', 
-                                        'owner_references',
-                                        'resource_version',
-                                        'uid', 'self_link']]
             d["metadata"] = meta
         except Exception as e:
             log.debug(e)
