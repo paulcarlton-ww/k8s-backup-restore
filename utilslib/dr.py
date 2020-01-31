@@ -239,32 +239,28 @@ class K8s(object):
     
     @staticmethod
     def remove_meta_fields(d):
+        [d.pop(x, None) for x in ['resourceVersion', 'uid', 'selfLink']]
         if not "metadata" in d:
             return
-         meta = K8s.object_to_dict(d.get("metadata"))
-         d["metadata"] = [meta.pop(x, None) for x in ['cluster_name',
-                                            'creation_timestamp', 
-                                            'deletion_grace_period_seconds',
-                                            'deletion_timestamp',
-                                            'finalizers',
-                                            'string_data',
-                                            'generation',
-                                            'initializers',
-                                            'managed_fields', 
-                                            'owner_references',
-                                            'resource_version',
-                                            'uid', 'self_link']]
+        meta = K8s.object_to_dict(d.get("metadata"))
+        [meta.pop(x, None) for x in ['cluster_name',
+                                        'creationTimestamp', 
+                                        'deletionGracePeriodSeconds',
+                                        'deletionTimestamp',
+                                        'finalizers',
+                                        'stringData',
+                                        'generation',
+                                        'initializers',
+                                        'managedFields', 
+                                        'ownerReferences',
+                                        'resourceVersion',
+                                        'uid', 'selfLink']]
+        d["metadata"] = meta
 
     @staticmethod
     def process_data(data): 
         d = K8s.object_to_dict(data)
-        try:
-            d["metadata"] = meta
-        except Exception as e:
-            log.debug(e)
-            pass
-        
-        [d.pop(x, None) for x in ['resource_version', 'uid', 'self_link']]
+        K8s.remove_meta_fields(d)
         
         for k, v in d.items():
             if isinstance(v, dict):
