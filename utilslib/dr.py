@@ -219,23 +219,23 @@ class K8s(object):
     
     @staticmethod
     def object_to_dict(data):
-        if isinstance(data, object):
+        if isinstance(data, object) and hasattr(data, attribute_map):
             d = {}
-            for k,v in data.attribute_map:
+            for k,v in data.attribute_map.items():
                 d[v] = getattr(data, k)
         else:
             if not isinstance(data, dict):
                 raise Exception("expecting object or dict: {}".format(type(data)))
             d = data
             try:
-                map = d.get("attribute_map")
+                map = d.get("attribute_map", {})
                 for k, v in map.items():
                     value = d.pop(k, None)
                     if value:
                         d[v] = value
             except Exception:
                 pass
-        d = K8s.strip_nulls(d)
+        return K8s.strip_nulls(d)
         
     @staticmethod
     def process_data(data): 
@@ -367,7 +367,7 @@ class Backup(K8s, Store):
         Backup object
         """
         super(Backup, self).__init__(*args, **kwargs)
-        self.custom_resourse = self.get_custom_resources()
+        #self.custom_resourse = self.get_custom_resources()
     
     @staticmethod
     def create_key_yaml(kind, data):
