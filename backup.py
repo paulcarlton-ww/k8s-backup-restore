@@ -13,12 +13,9 @@ import utilslib.dr as dr
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
-
+if len(sys.argv) < 2:
+    log.error("namespace argument required")
+    os.Exit(1)
+namespace = sys.argv[1]
 backup = dr.Backup(loglevel="DEBUG", bucket_name='bank-app-backup')
-excluded_namespaces=["kube-system", "kube-public",  "kube-node-lease", "istio-system"]
-
-namespaces = [n for n in backup.list_namespaces() if n.metadata.name not in excluded_namespaces]
-
-for n in namespaces:
-    print("\nbackingup namespace: {}".format(n.metadata.name))
-    items = backup.save_namespace(n.metadata.name)
+backup.save_namespace(namespace)

@@ -174,6 +174,7 @@ class K8s(object):
     v1 = None
     v1App = None
     v1ext = None
+    cluster_name = None
     
     kinds = {'ConfigMap': ('v1', 'config_map'),
              'EndPoints': ('v1', 'endpoints'),
@@ -206,8 +207,11 @@ class K8s(object):
         K8s object
         """
         super(K8s, self).__init__(*args, **kwargs)
+        
         # Use in cluster config when deployed to cluster
         config.load_kube_config()
+        cfg = config.kube_config.list_kube_config_contexts()
+        self.cluster_name = cfg[0][0]['context']['cluster'].split("/")[1]
         self.v1 = client.CoreV1Api()
         self.v1App = client.AppsV1Api()
         self.v1ext = client.ExtensionsV1beta1Api()
@@ -222,6 +226,25 @@ class K8s(object):
         return {k: v for k, v in data.items() if not k.startswith("_")} 
     
     @staticmethod
+    def process_dict(d):
+        [d.pop(x, None) for x in ['clusterName',
+                                  'generateName',
+                                  'creationTimestamp', 
+                                  'deletionGracePeriodSeconds',
+                                  'deletionTimestamp',
+                                  'finalizers',
+                                    'stringData',
+                                    'generation',
+                                    'initializers',
+                                    'managedFields', 
+                                    #'ownerReferences',
+                                    'resourceVersion',
+                                    'uid', 'selfLink']]
+        d = K8s.strip_nulls(d)
+        d = K8s.strip_underscores(d)
+        return d
+        
+    @staticmethod
     def object_to_dict(data):
         if isinstance(data, object) and hasattr(data, "attribute_map"):
             d = {}
@@ -229,52 +252,26 @@ class K8s(object):
                 d[v] = getattr(data, k)
         else:
             if not isinstance(data, dict):
-                raise Exception("expecting object or dict: {}".format(type(data)))
+                return data
             d = {}
             map = data.get("attribute_map", {})
             for k, v in map.items():
                 value = data.pop(k, None)
                 if value:
                     d[v] = value
-        return d
-    
-    @staticmethod
-    def remove_meta_fields(d):
-        [d.pop(x, None) for x in ['resourceVersion', 'uid', 'selfLink']]
-        if not "metadata" in d:
-            return
-        meta = K8s.object_to_dict(d.get("metadata"))
-        [meta.pop(x, None) for x in ['cluster_name',
-                                        'creationTimestamp', 
-                                        'deletionGracePeriodSeconds',
-                                        'deletionTimestamp',
-                                        'finalizers',
-                                        'stringData',
-                                        'generation',
-                                        'initializers',
-                                        'managedFields', 
-                                        'ownerReferences',
-                                        #'resourceVersion',
-                                        'uid', 'selfLink']]
-        d["metadata"] = meta
+        return K8s.process_dict(d)
 
     @staticmethod
     def process_data(data): 
         d = K8s.object_to_dict(data)
-        K8s.remove_meta_fields(d)
-        d = K8s.strip_nulls(d)
-        d = K8s.strip_underscores(d)
-        
-        for k, v in d.items():
-            if k == "metadata":
-                continue
-            if isinstance(v, dict):
+        if isinstance(d, dict):
+            for k, v in d.items():
                 d[k] = K8s.process_data(v)
-            if isinstance(v, list):
-                for i in v:
-                    if isinstance(i, dict) or isinstance(i, object):
-                        d[k] = K8s.process_data(i)
-
+        if isinstance(d, list):
+            l = []
+            for i in d:
+                l.append(K8s.process_data(i))
+            d = l
         return d
         
     def get_api_method(self, kind):
@@ -375,12 +372,11 @@ class Backup(K8s, Store):
         super(Backup, self).__init__(*args, **kwargs)
         #self.custom_resourse = self.get_custom_resources()
     
-    @staticmethod
-    def create_key_yaml(kind, data):
+    def create_key_yaml(self, kind, data):
         d = K8s.process_data(data)
         y = yaml.dump(d)
-        key = "cluster2/{}/{}/{}".format(d['metadata']['namespace'], 
-                                           kind, d['metadata']['name'])
+        key = "{}/{}/{}/{}/{}.yaml".format(self.cluster_name, d['metadata']['namespace'], 
+                                           kind, d["apiVersion"].replace("/","_"), d['metadata']['name'])
         print("\n# key: {}\n{}".format(key, y))
         return key, y
     
@@ -395,7 +391,7 @@ class Backup(K8s, Store):
         for kind in K8s.kinds.keys():
             for item in self.list_kind(namespace, kind):
                 read_data = self.read_kind(namespace, kind, item.metadata.name)
-                key, data = Backup.create_key_yaml(kind, read_data)
+                key, data = self.create_key_yaml(kind, read_data)
                 self.store_in_bucket(key, data)
 
 
