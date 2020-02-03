@@ -16,4 +16,6 @@ log.setLevel(logging.INFO)
 
 restore = dr.Restore(loglevel="DEBUG", bucket_name='bank-app-backup')
 #log.setLevel(logging.DEBUG)
-restore.restore_namespaces()
+restore.restore_namespaces(clusterName="cluster2", namespacesToRestore="sock-shop")
+
+log.info("finished restoring")

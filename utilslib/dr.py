@@ -22,9 +22,11 @@ import boto3.s3
 from botocore.config import Config
 import json
 import yaml
-from kubernetes import client, config
+from kubernetes import client, config, utils
+from kubernetes.client.rest import ApiException
 import utilslib.library as lib
 import logging
+import tempfile
 
 logging.basicConfig(format='%(asctime)-15s %(name)s:%(lineno)s - ' + 
                     '%(funcName)s() %(levelname)s - %(message)s',
@@ -91,10 +93,13 @@ class S3(Base):
         tuble containing the fields in the key based on '/' seperator.
         """
         fields = key.split('/')
-        if len(fields) != 4:
+        if len(fields) == 4:
+            return fields[0], fields[1], fields[2], fields[3]
+        elif len(fields) == 5:
+            return fields[0], fields[1], fields[2], fields[4]
+        else:
             raise Exception(
                 "key should comprise /cluster/namespace/kind/name")
-        return fields[0], fields[1], fields[2], fields[3]
 
 
 class Store(S3):
@@ -450,19 +455,42 @@ class Restore(K8s, Retrieve):
         self.delete_kind(namespace, kind, name)
                 
     @lib.timing_wrapper
-    def restore_namespaces(self):
+    def restore_namespaces(self, clusterName, namespacesToRestore="*"):
         namespace = []
-        for namespace in self.get_s3_namespaces("cluster2"):
-            print("# namespace: {}".format(namespace))
-            for kind in Restore.kind_order:
-                prefix = "cluster2/{}/{}".format(namespace, kind)
-                for key, data in self.get_bucket_items(prefix):
-                    _, _, _, name = S3.parse_key(key)
-                    #self.replace_kind(namespace, kind, name, data)
-                    if Restore.exclude_check(namespace, kind, name):
-                        print("# skipping: {} {} in namespace {}".format(kind, name, namespace))
-                        continue
-                    print("\n# key: {}\n{}".format(key, data.decode("utf-8")))
-                    self.remove_if_exists(namespace, kind, name)
-                    d = yaml.load(data)
-                    self.create_kind(namespace, kind, d)
+        for namespace in self.get_s3_namespaces(clusterName):
+            if namespacesToRestore != "*" and namespace not in namespacesToRestore:
+                log.info("skipping namespace %s", namespace)
+                continue
+
+            log.info("restoring namespace %s", namespace)
+            filename = "{}.yaml".format(namespace)
+            tempYamlFile = open(filename, "w+")
+
+            try:
+                for kind in Restore.kind_order:
+                    prefix = "{}/{}/{}".format(clusterName, namespace, kind)
+                    
+                    for key, data in self.get_bucket_items(prefix):
+                        _, _, _, name = S3.parse_key(key)
+                        #self.replace_kind(namespace, kind, name, data)
+                        if Restore.exclude_check(namespace, kind, name):
+                            log.info("skipping: %s/%s in namespace %s", kind, name, namespace)
+                            continue
+
+                        log.info("processing %s", key)
+                        log.debug("%s", data.decode("utf-8"))
+                        self.remove_if_exists(namespace, kind, name)
+                        d = yaml.load(data, Loader=yaml.FullLoader)
+                        #self.create_kind(namespace, kind, d)
+
+                        tempYamlFile.write(str(data, 'utf-8'))
+                        tempYamlFile.write("---\n")
+            except ApiException as err:
+                if err.status == 409:
+                    log.warn("resource already exists, skipping")
+                else:
+                    raise
+            finally:
+                tempYamlFile.close()
+                log.debug("closed output file %s", filename)
+                #utils.create_from_yaml(client.CustomObjectsApi(),tempYamlFile.name,True,namespace=namespace)
