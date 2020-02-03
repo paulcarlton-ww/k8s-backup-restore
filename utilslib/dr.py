@@ -216,6 +216,10 @@ class K8s(object):
     @staticmethod
     def strip_nulls(data):
         return {k: v for k, v in data.items() if v is not None}
+  
+    @staticmethod
+    def strip_underscores(data):
+        return {k: v for k, v in data.items() if not k.startswith("_")} 
     
     @staticmethod
     def object_to_dict(data):
@@ -226,16 +230,13 @@ class K8s(object):
         else:
             if not isinstance(data, dict):
                 raise Exception("expecting object or dict: {}".format(type(data)))
-            d = data
-            try:
-                map = d.get("attribute_map", {})
-                for k, v in map.items():
-                    value = d.pop(k, None)
-                    if value:
-                        d[v] = value
-            except Exception:
-                pass
-        return K8s.strip_nulls(d)
+            d = {}
+            map = data.get("attribute_map", {})
+            for k, v in map.items():
+                value = data.pop(k, None)
+                if value:
+                    d[v] = value
+        return d
     
     @staticmethod
     def remove_meta_fields(d):
@@ -253,7 +254,7 @@ class K8s(object):
                                         'initializers',
                                         'managedFields', 
                                         'ownerReferences',
-                                        'resourceVersion',
+                                        #'resourceVersion',
                                         'uid', 'selfLink']]
         d["metadata"] = meta
 
@@ -261,14 +262,18 @@ class K8s(object):
     def process_data(data): 
         d = K8s.object_to_dict(data)
         K8s.remove_meta_fields(d)
+        d = K8s.strip_nulls(d)
+        d = K8s.strip_underscores(d)
         
         for k, v in d.items():
+            if k == "metadata":
+                continue
             if isinstance(v, dict):
                 d[k] = K8s.process_data(v)
             if isinstance(v, list):
                 for i in v:
-                    if isinstance(i, dict):
-                        d[k] = K8s.process_data(v)
+                    if isinstance(i, dict) or isinstance(i, object):
+                        d[k] = K8s.process_data(i)
 
         return d
         
