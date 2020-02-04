@@ -403,40 +403,33 @@ class Backup(K8s, Store):
 class Restore(K8s, Retrieve):
     
         
-    kind_order = ['LimitRange',
+    kind_order = ['Namespace',
+                  'LimitRange',
                   'ResourceQuota',
                   'ConfigMap',
                   'Secret',
-                  'EndPoints',
+                  #'EndPoints',
                   #'Event',
                   #'PersistentVolumeClaim',
                   'Service',
                  #'ServiceAccount',
-                  'PodTemplate',
-                  'Pod',
-                  'ReplicationController',
-                  'ControllerRevision',
-                  'DaemonSet',
-                  'ReplicaSet',
-                  'StatefulSet',
+                  #'PodTemplate',
+                  #'Pod',
+                  #'ReplicationController',
+                  #'ControllerRevision',
+                  #'DaemonSet',
+                  #'ReplicaSet',
+                  #'StatefulSet',
                   'Deployment']
     
     exclude_list = [("default", "Service", "kubernetes"),
                     ("default", "Endpoints", "kubernetes")]
 
     @lib.retry_wrapper
-    def __init__(self, *args, **kwargs):
-        """
-        Constructor
-
-        Args:
-        args     -- posistional arguments
-        kwargs   -- Named arguments
-
-        Returns:
-        Restore object
-        """
-        super(Restore, self).__init__(*args, **kwargs)
+    def __init__(self, bucket_name, strategy):
+        super(Restore, self).__init__(bucket_name=bucket_name)
+        self.bucket_name = bucket_name
+        self.strategy = strategy
     
     @staticmethod
     def exclude_check(namespace, kind, name):
@@ -463,8 +456,7 @@ class Restore(K8s, Retrieve):
                 continue
 
             log.info("restoring namespace %s", namespace)
-            filename = "{}.yaml".format(namespace)
-            tempYamlFile = open(filename, "w+")
+            self.strategy.start_namespace(namespace)
 
             try:
                 for kind in Restore.kind_order:
@@ -472,25 +464,16 @@ class Restore(K8s, Retrieve):
                     
                     for key, data in self.get_bucket_items(prefix):
                         _, _, _, name = S3.parse_key(key)
-                        #self.replace_kind(namespace, kind, name, data)
                         if Restore.exclude_check(namespace, kind, name):
                             log.info("skipping: %s/%s in namespace %s", kind, name, namespace)
                             continue
 
                         log.info("processing %s", key)
                         log.debug("%s", data.decode("utf-8"))
-                        self.remove_if_exists(namespace, kind, name)
-                        d = yaml.load(data, Loader=yaml.FullLoader)
-                        #self.create_kind(namespace, kind, d)
-
-                        tempYamlFile.write(str(data, 'utf-8'))
-                        tempYamlFile.write("---\n")
+                        self.strategy.process_resource(data)
             except ApiException as err:
                 if err.status == 409:
                     log.warn("resource already exists, skipping")
                 else:
                     raise
-            finally:
-                tempYamlFile.close()
-                log.debug("closed output file %s", filename)
-                #utils.create_from_yaml(client.CustomObjectsApi(),tempYamlFile.name,True,namespace=namespace)
+            self.strategy.finish_namespace() 

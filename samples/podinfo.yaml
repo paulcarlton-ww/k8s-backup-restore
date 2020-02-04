@@ -1,0 +1,142 @@
+---
+# Source: podinfo/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-podinfo
+  namespace: podinfo
+  labels:
+    app: podinfo
+    chart: podinfo-3.2.0
+    release: test
+    heritage: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9898
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 9999
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    app: podinfo
+    release: test
+---
+# Source: podinfo/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-podinfo
+  namespace: podinfo
+  labels:
+    app: podinfo
+    chart: podinfo-3.2.0
+    release: test
+    heritage: Helm
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: podinfo
+      release: test
+  template:
+    metadata:
+      labels:
+        app: podinfo
+        release: test
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9898"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: podinfo
+          image: "stefanprodan/podinfo:3.2.0"
+          imagePullPolicy: IfNotPresent
+          command:
+            - ./podinfo
+            - --port=9898
+            - --port-metrics=9797
+            - --grpc-port=9999
+            - --grpc-service-name=podinfo
+            - --level=info
+            - --random-delay=false
+            - --random-error=false
+          env:
+          - name: PODINFO_UI_COLOR
+            value: #34577c
+          ports:
+            - name: http
+              containerPort: 9898
+              protocol: TCP
+            - name: http-metrics
+              containerPort: 9797
+              protocol: TCP
+            - name: grpc
+              containerPort: 9999
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+              - podcli
+              - check
+              - http
+              - localhost:9898/healthz
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+              - podcli
+              - check
+              - http
+              - localhost:9898/readyz
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+          volumeMounts:
+          - name: data
+            mountPath: /data
+          resources:
+            limits: null
+            requests:
+              cpu: 1m
+              memory: 16Mi
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: podinfo-cfg
+  namespace: podinfo
+  labels:
+    heritage: Helm
+    release: test
+    chart: podinfo-3.2.0
+    app: podinfo
+data:
+  configval1: hello
+  configval2: world
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: podinfo-secrets
+  namespace: podinfo
+  labels:
+    heritage: Helm
+    release: test
+    chart: podinfo-3.2.0
+    app: podinfo
+type: Opaque
+data:
+  username: YWRtaW4=
+  password: MWYyZDFlMmU2N2Rm
