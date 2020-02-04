@@ -177,7 +177,7 @@ class K8s(object):
     cluster_name = None
     
     kinds = {'ConfigMap': ('v1', 'config_map'),
-             'EndPoints': ('v1', 'endpoints'),
+             #'EndPoints': ('v1', 'endpoints'),
              # Not currently supported 'Event': ('v1', 'event'), 
              'LimitRange': ('v1', 'limit_range'),
              # Not currently supported 'PersistentVolumeClaim': ('v1', 'persistent_volume_claim'),
@@ -186,12 +186,12 @@ class K8s(object):
              'Service': ('v1', 'service'),
              # Not currently supported 'ServiceAccount': ('v1', 'service_account'),
              'PodTemplate': ('v1', 'pod_template'),
-             'Pod': ('v1', 'pod'),
-             'ReplicationController': ('v1', 'replication_controller'),
-             'ControllerRevision': ('v1App', 'controller_revision'),
-             'DaemonSet': ('v1App', 'daemon_set'),
-             'ReplicaSet': ('v1App', 'replica_set'),
-             'StatefulSet': ('v1App', 'stateful_set'),
+             #'Pod': ('v1', 'pod'),
+             #'ReplicationController': ('v1', 'replication_controller'),
+             #'ControllerRevision': ('v1App', 'controller_revision'),
+             #'DaemonSet': ('v1App', 'daemon_set'),
+             #'ReplicaSet': ('v1App', 'replica_set'),
+             #'StatefulSet': ('v1App', 'stateful_set'),
              'Deployment': ('v1App', 'deployment')}
     
     @lib.retry_wrapper
@@ -233,13 +233,15 @@ class K8s(object):
                                   'deletionGracePeriodSeconds',
                                   'deletionTimestamp',
                                   'finalizers',
-                                    'stringData',
-                                    'generation',
-                                    'initializers',
-                                    'managedFields', 
-                                    #'ownerReferences',
-                                    'resourceVersion',
-                                    'uid', 'selfLink']]
+                                  'stringData',
+                                  'generation',
+                                  'initializers',
+                                  'managedFields', 
+                                  'ownerReferences',
+                                  'resourceVersion',
+                                  'uid',
+                                  'selfLink',
+                                  'status']]
         d = K8s.strip_nulls(d)
         d = K8s.strip_underscores(d)
         return d
@@ -253,12 +255,15 @@ class K8s(object):
         else:
             if not isinstance(data, dict):
                 return data
-            d = {}
-            map = data.get("attribute_map", {})
-            for k, v in map.items():
-                value = data.pop(k, None)
-                if value:
-                    d[v] = value
+            if "attribute_map" in data:
+                d = {}
+                map = data.get("attribute_map", {})
+                for k, v in map.items():
+                    value = data.pop(k, None)
+                    if value:
+                        d[v] = value
+            else:
+                d = data
         return K8s.process_dict(d)
 
     @staticmethod
@@ -307,6 +312,11 @@ class K8s(object):
     def list_namespaces(self, limit=100, next=''):
         return self.v1.list_namespace(limit=limit, _continue=next)
  
+    @lib.timing_wrapper
+    @lib.retry_wrapper
+    def read_namespace(self, namespace):
+        return self.v1.read_namespace(namespace)
+    
     @lib.timing_wrapper
     @lib.k8s_chunk_wrapper
     @lib.retry_wrapper
@@ -372,11 +382,13 @@ class Backup(K8s, Store):
         super(Backup, self).__init__(*args, **kwargs)
         #self.custom_resourse = self.get_custom_resources()
     
-    def create_key_yaml(self, kind, data):
+    def create_key_yaml(self, data):
         d = K8s.process_data(data)
         y = yaml.dump(d)
-        key = "{}/{}/{}/{}/{}.yaml".format(self.cluster_name, d['metadata']['namespace'], 
-                                           kind, d["apiVersion"].replace("/","_"), d['metadata']['name'])
+        key = "{}/{}/{}/{}/{}.yaml".format(self.cluster_name,
+                                d['metadata']['namespace'] if d["kind"] != "Namespace" else d['metadata']['name'], 
+                                d["kind"], d["apiVersion"].replace("/","_"),
+                                d['metadata']['name'])
         print("\n# key: {}\n{}".format(key, y))
         return key, y
     
@@ -388,10 +400,13 @@ class Backup(K8s, Store):
 
     @lib.timing_wrapper
     def save_namespace(self, namespace):
+        ns = self.read_namespace(namespace)
+        key, data = self.create_key_yaml(ns)
+        self.store_in_bucket(key, data)
         for kind in K8s.kinds.keys():
             for item in self.list_kind(namespace, kind):
                 read_data = self.read_kind(namespace, kind, item.metadata.name)
-                key, data = self.create_key_yaml(kind, read_data)
+                key, data = self.create_key_yaml(read_data)
                 self.store_in_bucket(key, data)
 
 
