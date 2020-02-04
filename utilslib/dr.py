@@ -22,9 +22,11 @@ import boto3.s3
 from botocore.config import Config
 import json
 import yaml
-from kubernetes import client, config
+from kubernetes import client, config, utils
+from kubernetes.client.rest import ApiException
 import utilslib.library as lib
 import logging
+import tempfile
 
 logging.basicConfig(format='%(asctime)-15s %(name)s:%(lineno)s - ' + 
                     '%(funcName)s() %(levelname)s - %(message)s',
@@ -91,10 +93,13 @@ class S3(Base):
         tuble containing the fields in the key based on '/' seperator.
         """
         fields = key.split('/')
-        if len(fields) != 4:
+        if len(fields) == 4:
+            return fields[0], fields[1], fields[2], fields[3]
+        elif len(fields) == 5:
+            return fields[0], fields[1], fields[2], fields[4]
+        else:
             raise Exception(
                 "key should comprise /cluster/namespace/kind/name")
-        return fields[0], fields[1], fields[2], fields[3]
 
 
 class Store(S3):
@@ -413,40 +418,33 @@ class Backup(K8s, Store):
 class Restore(K8s, Retrieve):
     
         
-    kind_order = ['LimitRange',
+    kind_order = ['Namespace',
+                  'LimitRange',
                   'ResourceQuota',
                   'ConfigMap',
                   'Secret',
-                  'EndPoints',
+                  #'EndPoints',
                   #'Event',
                   #'PersistentVolumeClaim',
                   'Service',
                  #'ServiceAccount',
-                  'PodTemplate',
-                  'Pod',
-                  'ReplicationController',
-                  'ControllerRevision',
-                  'DaemonSet',
-                  'ReplicaSet',
-                  'StatefulSet',
+                  #'PodTemplate',
+                  #'Pod',
+                  #'ReplicationController',
+                  #'ControllerRevision',
+                  #'DaemonSet',
+                  #'ReplicaSet',
+                  #'StatefulSet',
                   'Deployment']
     
     exclude_list = [("default", "Service", "kubernetes"),
                     ("default", "Endpoints", "kubernetes")]
 
     @lib.retry_wrapper
-    def __init__(self, *args, **kwargs):
-        """
-        Constructor
-
-        Args:
-        args     -- posistional arguments
-        kwargs   -- Named arguments
-
-        Returns:
-        Restore object
-        """
-        super(Restore, self).__init__(*args, **kwargs)
+    def __init__(self, bucket_name, strategy):
+        super(Restore, self).__init__(bucket_name=bucket_name)
+        self.bucket_name = bucket_name
+        self.strategy = strategy
     
     @staticmethod
     def exclude_check(namespace, kind, name):
@@ -465,19 +463,32 @@ class Restore(K8s, Retrieve):
         self.delete_kind(namespace, kind, name)
                 
     @lib.timing_wrapper
-    def restore_namespaces(self):
+    def restore_namespaces(self, clusterName, namespacesToRestore="*"):
         namespace = []
-        for namespace in self.get_s3_namespaces("cluster2"):
-            print("# namespace: {}".format(namespace))
-            for kind in Restore.kind_order:
-                prefix = "cluster2/{}/{}".format(namespace, kind)
-                for key, data in self.get_bucket_items(prefix):
-                    _, _, _, name = S3.parse_key(key)
-                    #self.replace_kind(namespace, kind, name, data)
-                    if Restore.exclude_check(namespace, kind, name):
-                        print("# skipping: {} {} in namespace {}".format(kind, name, namespace))
-                        continue
-                    print("\n# key: {}\n{}".format(key, data.decode("utf-8")))
-                    self.remove_if_exists(namespace, kind, name)
-                    d = yaml.load(data)
-                    self.create_kind(namespace, kind, d)
+        for namespace in self.get_s3_namespaces(clusterName):
+            if namespacesToRestore != "*" and namespace not in namespacesToRestore:
+                log.info("skipping namespace %s", namespace)
+                continue
+
+            log.info("restoring namespace %s", namespace)
+            self.strategy.start_namespace(namespace)
+
+            try:
+                for kind in Restore.kind_order:
+                    prefix = "{}/{}/{}".format(clusterName, namespace, kind)
+                    
+                    for key, data in self.get_bucket_items(prefix):
+                        _, _, _, name = S3.parse_key(key)
+                        if Restore.exclude_check(namespace, kind, name):
+                            log.info("skipping: %s/%s in namespace %s", kind, name, namespace)
+                            continue
+
+                        log.info("processing %s", key)
+                        log.debug("%s", data.decode("utf-8"))
+                        self.strategy.process_resource(data)
+            except ApiException as err:
+                if err.status == 409:
+                    log.warn("resource already exists, skipping")
+                else:
+                    raise
+            self.strategy.finish_namespace() 
