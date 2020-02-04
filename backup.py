@@ -15,7 +15,7 @@ log = logging.getLogger()
 log.setLevel(logging.INFO)
 if len(sys.argv) < 2:
     log.error("namespace argument required")
-    os.Exit(1)
+    sys.exit(1)
 namespace = sys.argv[1]
 backup = dr.Backup(loglevel="DEBUG", bucket_name='bank-app-backup')
 backup.save_namespace(namespace)
