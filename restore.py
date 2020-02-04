@@ -25,7 +25,7 @@ bucket_name = "bank-app-backup"
 cluster_name = "cluster1"
 kubectl_path = "/usr/local/bin/kubectl"
 temp_folder = tempfile.gettempdir()
-dry_run = True
+dry_run = False
 namespace_to_restore = "podinfo"
 
 strategy = KubectlRestoreStrategy(cluster_name, kubectl_path, temp_folder, dry_run)
