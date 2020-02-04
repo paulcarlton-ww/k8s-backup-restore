@@ -9,6 +9,7 @@ import time
 import logging
 from kubernetes import client, config, watch
 import tempfile
+import click
 
 import utilslib.library as lib
 import utilslib.dr as dr
@@ -21,16 +22,24 @@ logging.basicConfig(format='%(asctime)-15s %(name)s:%(lineno)s - ' +
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-bucket_name = "bank-app-backup"
-cluster_name = "cluster1"
-kubectl_path = "/usr/local/bin/kubectl"
-temp_folder = tempfile.gettempdir()
-dry_run = False
-namespace_to_restore = "podinfo"
+@click.command()
+@click.option('--bucket', default='bank-app-backup', help='name of the backup bucket', required=True)
+@click.option('--clustername', default='cluster1', help='the name of the cluster to restore from', required=True)
+@click.option('--kubectl', default='/usr/local/bin/kubectl', help='the path to kubectl', required=True)
+@click.option('--dry-run', default=True, help='should we do a dry run')
+@click.option('--namespace', default='*', help='the namespace to restore')
+def restore(bucket, clustername, kubectl, dry_run, namespace):
+    """Restore Kubernetes namespaces from a backup in S3"""
+    log.info("starting restore")
 
-strategy = KubectlRestoreStrategy(cluster_name, kubectl_path, temp_folder, dry_run)
+    temp_folder = tempfile.gettempdir()
 
-restore = dr.Restore(bucket_name=bucket_name, strategy=strategy)
-restore.restore_namespaces(clusterName=cluster_name, namespacesToRestore=namespace_to_restore)
+    strategy = KubectlRestoreStrategy(clustername, kubectl, temp_folder, dry_run)
 
-log.info("finished restoring")
+    restore = dr.Restore(bucket_name=bucket, strategy=strategy)
+    restore.restore_namespaces(clusterName=clustername, namespacesToRestore=namespace)
+
+    log.info("finished restoring")
+
+if __name__ == '__main__':
+    restore()
