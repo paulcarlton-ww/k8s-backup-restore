@@ -28,12 +28,6 @@ import utilslib.library as lib
 import logging
 import tempfile
 
-logging.basicConfig(format='%(asctime)-15s %(name)s:%(lineno)s - ' + 
-                    '%(funcName)s() %(levelname)s - %(message)s',
-                    level=logging.INFO)
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
-
 class Base(object):
     log = None
     
@@ -51,10 +45,10 @@ class Base(object):
         """
         super(Base, self).__init__()
         log_name = kwargs["logname"] if "logname" in kwargs else __name__
-        log = logging.getLogger(log_name)
+        self.log = logging.getLogger(log_name)
         log_level = kwargs["loglevel"] if "loglevel" in kwargs else "CRITICAL"
         loglevel = getattr(logging, log_level, logging.CRITICAL)
-        log.setLevel(loglevel)
+        self.log.setLevel(loglevel)
             
 class S3(Base):
     client = None
@@ -441,8 +435,8 @@ class Restore(K8s, Retrieve):
                     ("default", "Endpoints", "kubernetes")]
 
     @lib.retry_wrapper
-    def __init__(self, bucket_name, strategy):
-        super(Restore, self).__init__(bucket_name=bucket_name)
+    def __init__(self, bucket_name, strategy,log_level):
+        super(Restore, self).__init__(bucket_name=bucket_name,loglevel=log_level)
         self.bucket_name = bucket_name
         self.strategy = strategy
     
@@ -467,10 +461,10 @@ class Restore(K8s, Retrieve):
         namespace = []
         for namespace in self.get_s3_namespaces(clusterName):
             if namespacesToRestore != "*" and namespace not in namespacesToRestore:
-                log.info("skipping namespace %s", namespace)
+                self.log.info("skipping namespace: %s", namespace)
                 continue
 
-            log.info("restoring namespace %s", namespace)
+            self.log.info("restoring namespace: %s", namespace)
             self.strategy.start_namespace(namespace)
 
             try:
@@ -480,15 +474,15 @@ class Restore(K8s, Retrieve):
                     for key, data in self.get_bucket_items(prefix):
                         _, _, _, name = S3.parse_key(key)
                         if Restore.exclude_check(namespace, kind, name):
-                            log.info("skipping: %s/%s in namespace %s", kind, name, namespace)
+                            self.log.info("skipping: %s/%s in namespace %s", kind, name, namespace)
                             continue
 
-                        log.info("processing %s", key)
-                        log.debug("%s", data.decode("utf-8"))
+                        self.log.info("processing %s", key)
+                        self.log.debug("%s", data.decode("utf-8"))
                         self.strategy.process_resource(data)
             except ApiException as err:
                 if err.status == 409:
-                    log.warn("resource already exists, skipping")
+                    self.log.warn("resource already exists, skipping")
                 else:
                     raise
             self.strategy.finish_namespace() 
