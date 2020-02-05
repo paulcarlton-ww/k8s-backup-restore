@@ -15,4 +15,4 @@ cli.add_command(restore_command, name='restore')
 cli.add_command(backup_command, name='backup')
 
 if __name__ == '__main__':
-    cli()
+    cli(auto_envvar_prefix='DR')
