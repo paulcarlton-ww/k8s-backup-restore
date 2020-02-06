@@ -1,16 +1,9 @@
-#!/usr/bin/python3
-"""
-Backup utility
-"""
-from __future__ import print_function
-import sys
-import os
-import time
 import logging
 import click
-from kubernetes import client, config, watch
+
 import utilslib.library as lib
 import utilslib.dr as dr
+
 
 @click.command(name='backup')
 @click.option('--bucket', default='bank-app-backup', help='name of the backup bucket', required=True)

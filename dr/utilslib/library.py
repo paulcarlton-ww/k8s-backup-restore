@@ -3,12 +3,6 @@
 This module includes utility functions and classes
 """
 
-__author__ = "Paul Carlton <paul.carlton414@gmail.com>"
-__copyright__ = "Copyright (C) 2016 Paul Carlton"
-__license__ = "Public Domain"
-__version__ = "0.2"
-__date__ = "18 October 2016"
-
 import os
 import sys
 import time
@@ -22,13 +16,15 @@ logging.basicConfig(format='%(asctime)-15s %(name)s:%(lineno)s - %(funcName)s() 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
+
 class DateTimeEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, datetime):
             return o.isoformat()
 
         return json.JSONEncoder.default(self, o)
-    
+
+
 def dynamic_method_call(*args, **kwargs):
     method_prefix = kwargs.get('method_prefix', '')
     method_suffix = kwargs.get('method_suffix', '')
@@ -46,6 +42,7 @@ def dynamic_method_call(*args, **kwargs):
         [kwargs.pop(x, None) for x in ['method_object', 'method_prefix', 'method_text', 'method_suffix']]
         return target_func(*args, **kwargs)
 
+
 def k8s_chunk_wrapper(func, limit=100, next_item=''):
     """
     Function wrapper to process kubernetes client calls that get lists of items in chunks
@@ -58,11 +55,12 @@ def k8s_chunk_wrapper(func, limit=100, next_item=''):
     Returns:
     Nothing
     """
-            
+
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):  
+    def wrapper(*args, **kwargs):
         all_items = []
-        next_item=''
+        next_item = ''
+
         while next_item is not None:
             kwargs["next"] = next_item
             try:
@@ -74,6 +72,7 @@ def k8s_chunk_wrapper(func, limit=100, next_item=''):
             all_items += results.items
         return all_items
     return wrapper
+
 
 def retry_wrapper(func, max_tries=5, delay=1, report=False):
     """
@@ -107,6 +106,7 @@ def retry_wrapper(func, max_tries=5, delay=1, report=False):
                 raise e
     return wrapper
 
+
 def timing_wrapper(func):
     """
     Function wrapper to automatically retry failed operations
@@ -129,6 +129,7 @@ def timing_wrapper(func):
             log.debug("Operation: {0}, Elapsed: {1}".format(func.__name__, str(elapsed)))
     return wrapper
 
+
 def _max_len(my_items,
              item_name='name',
              min_len=4):
@@ -149,8 +150,7 @@ def _max_len(my_items,
     for item in my_list:
         if isinstance(item, dict):
             l = (len(item[item_name])
-                 if (item_name in item and
-                     item[item_name])else 0)
+                 if (item_name in item and item[item_name])else 0)
         else:
             it = getattr(item, item_name, str(item))
             l = len(it) if it is not None else 0

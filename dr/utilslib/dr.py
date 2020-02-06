@@ -1,14 +1,6 @@
-# coding: utf-8
 """
 This module contains DR classes
 """
-
-__author__ = "Paul Carlton <paul.carlton414@gmail.com>"
-__copyright__ = "Copyright (C) 2016 Paul Carlton"
-__license__ = "Public Domain"
-__version__ = "0.2"
-__date__ = "18 October 2016"
-
 
 from datetime import date, timedelta
 import os
@@ -28,9 +20,10 @@ import utilslib.library as lib
 import logging
 import tempfile
 
+
 class Base(object):
     log = None
-    
+
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
         """
@@ -49,12 +42,13 @@ class Base(object):
         log_level = kwargs["loglevel"] if "loglevel" in kwargs else "CRITICAL"
         loglevel = getattr(logging, log_level, logging.CRITICAL)
         self.log.setLevel(loglevel)
-            
+
+
 class S3(Base):
     client = None
     bucket = None
     bucket_name = None
-        
+
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
         """
@@ -74,7 +68,7 @@ class S3(Base):
         self.bucket_name = kwargs.get("bucket_name", None)
         if self.bucket_name is not None:
             self.bucket = s3.Bucket(self.bucket_name)
-    
+
     @staticmethod
     def parse_key(key):
         """
@@ -87,76 +81,73 @@ class S3(Base):
         tuble containing the fields in the key based on '/' seperator.
         """
         fields = key.split('/')
-        if len(fields) == 4:
-            return fields[0], fields[1], fields[2], fields[3]
-        elif len(fields) == 5:
+        if len(fields) == 5:
             return fields[0], fields[1], fields[2], fields[4]
         else:
             raise Exception(
-                "key should comprise /cluster/namespace/kind/name")
+                "key should comprise cluster/namespace/kind/apiversion/name")
 
 
 class Store(S3):
 
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
-            """
-            Constructor
+        """
+        Constructor
 
-            Args:
-            args     -- posistional arguments
-            kwargs   -- Named arguments
+        Args:
+        args     -- posistional arguments
+        kwargs   -- Named arguments
 
-            Returns:
-            Store object
-            """
-            super(Store, self).__init__(*args, **kwargs)
+        Returns:
+        Store object
+        """
+        super(Store, self).__init__(*args, **kwargs)
 
     @lib.timing_wrapper
-    @lib.retry_wrapper       
+    @lib.retry_wrapper
     def store_in_bucket(self, key, data):
         """
         store data in an S3 bucket with the provided key.
 
         :param key: The key.
         :param data: The dictionary to store
-        """ 
-        self.bucket.put_object(Key=key,Body=data)
+        """
+        self.bucket.put_object(Key=key, Body=data)
 
 
 class Retrieve(S3):
-    
+
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
-            """
-            Constructor
+        """
+        Constructor
 
-            Args:
-            args     -- posistional arguments
-            kwargs   -- Named arguments
+        Args:
+        args     -- posistional arguments
+        kwargs   -- Named arguments
 
-            Returns:
-            Retrieve object
-            """
-            super(Retrieve, self).__init__(*args, **kwargs)
-    
+        Returns:
+        Retrieve object
+        """
+        super(Retrieve, self).__init__(*args, **kwargs)
+
     @lib.timing_wrapper
-    @lib.retry_wrapper       
+    @lib.retry_wrapper
     def get_s3_namespaces(self, prefix):
         """
         retrieve namespace names for provided cluster name prefix.
 
         :param prefix: The key prefix .
         """
-        client = boto3.client('s3')
         result = self.client.list_objects(Bucket=self.bucket_name,
-                                      Prefix="{}/".format(prefix), Delimiter='/')
+                                          Prefix="{}/".format(prefix), Delimiter='/')
         for o in result.get('CommonPrefixes'):
             cluster_namespace = o.get('Prefix')
             yield(cluster_namespace.split('/')[1])
 
     @lib.timing_wrapper
-    @lib.retry_wrapper       
+    @lib.retry_wrapper
     def get_bucket_items(self, prefix):
         """
         retrieve items in an S3 bucket with the provided prefix.
@@ -166,33 +157,22 @@ class Retrieve(S3):
 
         for obj in list(self.bucket.objects.filter(Prefix=prefix)):
             yield(obj.key, obj.get()['Body'].read())
-                  # json.loads(obj.get()['Body'].read()))
-      
+
 
 class K8s(object):
     v1 = None
     v1App = None
     v1ext = None
     cluster_name = None
-    
+
     kinds = {'ConfigMap': ('v1', 'config_map'),
-             #'EndPoints': ('v1', 'endpoints'),
-             # Not currently supported 'Event': ('v1', 'event'), 
              'LimitRange': ('v1', 'limit_range'),
-             # Not currently supported 'PersistentVolumeClaim': ('v1', 'persistent_volume_claim'),
              'ResourceQuota': ('v1', 'resource_quota'),
              'Secret': ('v1', 'secret'),
              'Service': ('v1', 'service'),
-             # Not currently supported 'ServiceAccount': ('v1', 'service_account'),
              'PodTemplate': ('v1', 'pod_template'),
-             #'Pod': ('v1', 'pod'),
-             #'ReplicationController': ('v1', 'replication_controller'),
-             #'ControllerRevision': ('v1App', 'controller_revision'),
-             #'DaemonSet': ('v1App', 'daemon_set'),
-             #'ReplicaSet': ('v1App', 'replica_set'),
-             #'StatefulSet': ('v1App', 'stateful_set'),
              'Deployment': ('v1App', 'deployment')}
-    
+
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
         """
@@ -206,7 +186,7 @@ class K8s(object):
         K8s object
         """
         super(K8s, self).__init__(*args, **kwargs)
-        
+
         # Use in cluster config when deployed to cluster
         config.load_kube_config()
         cfg = config.kube_config.list_kube_config_contexts()
@@ -219,11 +199,11 @@ class K8s(object):
     @staticmethod
     def strip_nulls(data):
         return {k: v for k, v in data.items() if v is not None}
-  
+
     @staticmethod
     def strip_underscores(data):
         return {k: v for k, v in data.items() if not k.startswith("_")} 
-    
+
     @staticmethod
     def process_dict(d):
         [d.pop(x, None) for x in ['clusterName',
@@ -244,12 +224,12 @@ class K8s(object):
         d = K8s.strip_nulls(d)
         d = K8s.strip_underscores(d)
         return d
-        
+
     @staticmethod
     def object_to_dict(data):
         if isinstance(data, object) and hasattr(data, "attribute_map"):
             d = {}
-            for k,v in data.attribute_map.items():
+            for k, v in data.attribute_map.items():
                 d[v] = getattr(data, k)
         else:
             if not isinstance(data, dict):
@@ -266,7 +246,7 @@ class K8s(object):
         return K8s.process_dict(d)
 
     @staticmethod
-    def process_data(data): 
+    def process_data(data):
         d = K8s.object_to_dict(data)
         if isinstance(d, dict):
             for k, v in d.items():
@@ -277,7 +257,7 @@ class K8s(object):
                 l.append(K8s.process_data(i))
             d = l
         return d
-        
+
     def get_api_method(self, kind):
         try:
             api_name = K8s.kinds.get(kind)[0]
@@ -286,86 +266,86 @@ class K8s(object):
         except Exception as e:
             raise e
         return api, method
-            
 
     @lib.timing_wrapper
     @lib.k8s_chunk_wrapper
     @lib.retry_wrapper
-    def list_custom_resource_definition(self,  limit=100, next=''):
+    def list_custom_resource_definition(self, limit=100, next=''):
         return self.v1beta1.list_custom_resource_definition()
-    
+
     @lib.timing_wrapper
     @lib.retry_wrapper
     def read_resource_definition(self, name):
-        return self.v1beta1.list_custom_resource_definition(name)
-     
+        return self.v1beta1.list_custom_resource_definition(name=name)
+
     @lib.timing_wrapper
     @lib.retry_wrapper
     def get_custom_resource_definitions(self):
         for resource in self.list_custom_resource_definition():
             yield self.v1beta1.read_custom_resource_definition(resource.metadata.name)
-      
+
     @lib.timing_wrapper
     @lib.k8s_chunk_wrapper
     @lib.retry_wrapper
     def list_namespaces(self, limit=100, next=''):
         return self.v1.list_namespace(limit=limit, _continue=next)
- 
+
     @lib.timing_wrapper
     @lib.retry_wrapper
     def read_namespace(self, namespace):
         return self.v1.read_namespace(namespace)
-    
+
     @lib.timing_wrapper
     @lib.k8s_chunk_wrapper
     @lib.retry_wrapper
     def list_kind(self, namespace, kind, limit=100, next=''):
         api, method = self.get_api_method(kind)
         return lib.dynamic_method_call(namespace, limit=limit, _continue=next,
-                                   method_text=method,
-                                   method_prefix="list_namespaced_",
-                                   method_object=api)
-        
+                                       method_text=method,
+                                       method_prefix="list_namespaced_",
+                                       method_object=api)
+
     @lib.timing_wrapper
     @lib.retry_wrapper
     def read_kind(self, namespace, kind, name):
         api, method = self.get_api_method(kind)
         return lib.dynamic_method_call(name, namespace,
-                                   method_text=method,
-                                   method_prefix="read_namespaced_",
-                                   method_object=api)
+                                       method_text=method,
+                                       method_prefix="read_namespaced_",
+                                       method_object=api)
 
     @lib.timing_wrapper
     @lib.retry_wrapper
     def delete_kind(self, namespace, kind, name):
         api, method = self.get_api_method(kind)
         return lib.dynamic_method_call(name, namespace,
-                                   method_text=method,
-                                   method_prefix="delete_namespaced_",
-                                   method_object=api)
-     
+                                       method_text=method,
+                                       method_prefix="delete_namespaced_",
+                                       method_object=api)
+
     @lib.timing_wrapper
     @lib.retry_wrapper
     def create_kind(self, namespace, kind, data):
         api, method = self.get_api_method(kind)
         return lib.dynamic_method_call(namespace, data,
-                                   method_text=method,
-                                   method_prefix="create_namespaced_",
-                                   method_object=api)
-          
+                                       method_text=method,
+                                       method_prefix="create_namespaced_",
+                                       method_object=api)
+
     @lib.timing_wrapper
     @lib.retry_wrapper
     def replace_kind(self, namespace, kind, name, data):
         api, method = self.get_api_method(kind)
         return lib.dynamic_method_call(name, namespace, data,
-                                   method_text=method,
-                                   method_prefix="replace_namespaced_",
-                                   method_object=api)
-  
+                                       method_text=method,
+                                       method_prefix="replace_namespaced_",
+                                       method_object=api)
+
+
 class Backup(K8s, Store):
-    
+
     custom_resources = []
-    
+
     @lib.retry_wrapper
     def __init__(self, *args, **kwargs):
         """
@@ -379,18 +359,17 @@ class Backup(K8s, Store):
         Backup object
         """
         super(Backup, self).__init__(*args, **kwargs)
-        #self.custom_resourse = self.get_custom_resources()
-    
+
     def create_key_yaml(self, data):
         d = K8s.process_data(data)
         y = yaml.dump(d)
         key = "{}/{}/{}/{}/{}.yaml".format(self.cluster_name,
-                                d['metadata']['namespace'] if d["kind"] != "Namespace" else d['metadata']['name'], 
-                                d["kind"], d["apiVersion"].replace("/","_"),
+                                d['metadata']['namespace'] if d["kind"] != "Namespace" else d['metadata']['name'],
+                                d["kind"], d["apiVersion"].replace("/", "_"),
                                 d['metadata']['name'])
         print("\n# key: {}\n{}".format(key, y))
         return key, y
-    
+
     @lib.timing_wrapper
     def get_custom_resources(self):
         resources = []
@@ -410,36 +389,23 @@ class Backup(K8s, Store):
 
 
 class Restore(K8s, Retrieve):
-    
-        
     kind_order = ['Namespace',
                   'LimitRange',
                   'ResourceQuota',
                   'ConfigMap',
                   'Secret',
-                  #'EndPoints',
-                  #'Event',
-                  #'PersistentVolumeClaim',
                   'Service',
-                 #'ServiceAccount',
-                  #'PodTemplate',
-                  #'Pod',
-                  #'ReplicationController',
-                  #'ControllerRevision',
-                  #'DaemonSet',
-                  #'ReplicaSet',
-                  #'StatefulSet',
                   'Deployment']
-    
+
     exclude_list = [("default", "Service", "kubernetes"),
                     ("default", "Endpoints", "kubernetes")]
 
     @lib.retry_wrapper
-    def __init__(self, bucket_name, strategy,log_level):
-        super(Restore, self).__init__(bucket_name=bucket_name,loglevel=log_level)
+    def __init__(self, bucket_name, strategy, log_level):
+        super(Restore, self).__init__(bucket_name=bucket_name, loglevel=log_level)
         self.bucket_name = bucket_name
         self.strategy = strategy
-    
+
     @staticmethod
     def exclude_check(namespace, kind, name):
         if (namespace, kind, name) in Restore.exclude_list:
@@ -447,15 +413,15 @@ class Restore(K8s, Retrieve):
         if kind == "Secret" and "default" in name:
             return True
         return False
-    
+
     @lib.timing_wrapper
     def remove_if_exists(self, namespace, kind, name):
         try:
             self.read_kind(namespace, kind, name)
-        except Exception as e:
+        except Exception:
             return
         self.delete_kind(namespace, kind, name)
-                
+
     @lib.timing_wrapper
     def restore_namespaces(self, clusterName, namespacesToRestore="*"):
         namespace = []
@@ -470,7 +436,7 @@ class Restore(K8s, Retrieve):
             try:
                 for kind in Restore.kind_order:
                     prefix = "{}/{}/{}".format(clusterName, namespace, kind)
-                    
+
                     for key, data in self.get_bucket_items(prefix):
                         _, _, _, name = S3.parse_key(key)
                         if Restore.exclude_check(namespace, kind, name):
@@ -485,4 +451,4 @@ class Restore(K8s, Retrieve):
                     self.log.warn("resource already exists, skipping")
                 else:
                     raise
-            self.strategy.finish_namespace() 
+            self.strategy.finish_namespace()

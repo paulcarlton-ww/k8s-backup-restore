@@ -1,15 +1,11 @@
-from __future__ import print_function
-import sys
-import os
-import time
 import logging
-from kubernetes import client, config, watch
 import tempfile
 import click
 
 import utilslib.library as lib
 import utilslib.dr as dr
 from restore import KubectlRestoreStrategy
+
 
 @click.command(name='restore')
 @click.option('--bucket', default='bank-app-backup', help='name of the backup bucket', required=True)
@@ -31,7 +27,7 @@ def restore_command(bucket, clustername, kubectl, dry_run, namespace, log_level)
 
     strategy = KubectlRestoreStrategy(clustername, kubectl, temp_folder, dry_run)
 
-    restore = dr.Restore(bucket_name=bucket, strategy=strategy,log_level=log_level)
+    restore = dr.Restore(bucket_name=bucket, strategy=strategy, log_level=log_level)
     restore.restore_namespaces(clusterName=clustername, namespacesToRestore=namespace)
 
     log.info("finished restoring")
