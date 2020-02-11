@@ -1,0 +1,4 @@
+[MESSAGES CONTROL]
+
+# C0301 = long lines
+disable=C0301

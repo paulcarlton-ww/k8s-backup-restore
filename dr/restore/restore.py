@@ -4,7 +4,7 @@ import click
 
 import utilslib.library as lib
 import utilslib.dr as dr
-from restore import KubectlRestoreStrategy
+from utilslib.restore.strategy import KubectlRestoreStrategy
 
 
 @click.command(name='restore')
