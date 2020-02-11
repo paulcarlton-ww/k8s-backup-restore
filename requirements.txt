@@ -1,5 +1,0 @@
-boto3
-kubernetes
-eventlet
-click
--e git+https://github.com/paulcarlton-ww/k8s-dr-utils#egg=k8sdrutils

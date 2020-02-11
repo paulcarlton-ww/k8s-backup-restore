@@ -7,7 +7,7 @@ import utilslib.dr as dr
 
 @click.command(name='backup')
 @click.option('--bucket', default='bank-app-backup', help='name of the backup bucket', required=True)
-@click.option('--namespace', help='the namespace to restore', required=True)
+@click.option('--namespace', help='the namespace to backup', required=True)
 @click.option('--log-level', default='INFO', help='the log level')
 def backup_command(bucket, namespace, log_level):
     """Backups Kubernetes namespaces to S3"""
