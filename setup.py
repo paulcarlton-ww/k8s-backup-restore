@@ -21,7 +21,7 @@ setuptools.setup(
     install_requires=['boto3',
                       'kubernetes',
                       'click',
-                      'k8sdrutils @ git+https://github.com/paulcarlton-ww/k8s-dr-utils@0.0.1#egg=k8sdrutils'
+                      'k8sdrutils @ git+https://github.com/paulcarlton-ww/k8s-dr-utils@0.0.10#egg=k8sdrutils'
                       ],
     extras_require={
         'dev': ['pylint'],

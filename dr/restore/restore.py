@@ -26,6 +26,6 @@ def restore_command(bucket, clusterset, clustername, kubectl, dry_run, namespace
     strategy = KubectlRestoreStrategy(clustername, kubectl, temp_folder, dry_run)
 
     restore = dr.Restore(bucket_name=bucket, strategy=strategy, log_level=log_level, kube_config=kube_config)
-    restore.restore_namespaces(clusterset, clustername, namespacesToRestore=namespace)
+    restore.restore_namespaces(clusterset, clustername, namespace)
 
     lib.log.info("finished restoring")
