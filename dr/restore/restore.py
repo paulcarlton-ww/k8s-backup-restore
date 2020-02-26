@@ -15,7 +15,7 @@ from utilslib.restore.strategy import KubectlRestoreStrategy
 @click.option('--namespace', default='*', help='the namespace to restore')
 @click.option('--bucket', default='bank-apps-backup', help='name of the backup bucket')
 @click.option('--log-level', default='INFO', help='the log level')
-@click.option('--kube-config', default='', help='the kube config file to use when running out of cluster')
+@click.option('--kube-config', help='the kube config file of the destination cluster', required=True)
 def restore_command(bucket, clusterset, clustername, kubectl, dry_run, namespace, log_level, kube_config):
     """Restore Kubernetes namespaces from a backup in S3"""
     lib.log.info("starting restore")
